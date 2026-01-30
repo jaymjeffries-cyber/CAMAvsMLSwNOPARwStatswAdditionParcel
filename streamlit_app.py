@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+from datetime import datetime
 from openpyxl import load_workbook
 
 # Page configuration
@@ -437,6 +438,48 @@ def create_excel_with_hyperlinks(df, sheet_name='Sheet1'):
     
     return final_output.getvalue()
 
+def create_zip_with_all_reports(df_missing_cama, df_missing_mls, df_value_mismatches, 
+                                 df_perfect_matches, city_comparison_df=None):
+    """Create a ZIP file containing all Excel reports and stats CSV with timestamped filenames."""
+    import zipfile
+    
+    # Get current timestamp for filenames
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    
+    # Create ZIP file in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Add each Excel report if it has data
+        if not df_missing_cama.empty:
+            excel_data = create_excel_with_hyperlinks(df_missing_cama, 'Missing in CAMA')
+            filename = f"missing_in_CAMA_{timestamp}.xlsx"
+            zip_file.writestr(filename, excel_data)
+        
+        if not df_missing_mls.empty:
+            excel_data = create_excel_with_hyperlinks(df_missing_mls, 'Missing in MLS')
+            filename = f"missing_in_MLS_{timestamp}.xlsx"
+            zip_file.writestr(filename, excel_data)
+        
+        if not df_value_mismatches.empty:
+            excel_data = create_excel_with_hyperlinks(df_value_mismatches, 'Value Mismatches')
+            filename = f"value_mismatches_{timestamp}.xlsx"
+            zip_file.writestr(filename, excel_data)
+        
+        if not df_perfect_matches.empty:
+            excel_data = create_excel_with_hyperlinks(df_perfect_matches, 'Perfect Matches')
+            filename = f"perfect_matches_{timestamp}.xlsx"
+            zip_file.writestr(filename, excel_data)
+        
+        # Add city statistics CSV if available
+        if city_comparison_df is not None and not city_comparison_df.empty:
+            csv_data = city_comparison_df.to_csv(index=False)
+            filename = f"city_match_statistics_{timestamp}.csv"
+            zip_file.writestr(filename, csv_data)
+    
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
+
 # --- Streamlit App ---
 
 st.title("📊 MLS vs CAMA Data Comparison Tool")
@@ -609,6 +652,9 @@ if mls_file and cama_file:
                 # Sort by total parcels descending
                 city_comparison = city_comparison.sort_values('Total_CAMA_Parcels', ascending=False)
                 
+                # Store in session state for download all button
+                st.session_state['city_comparison'] = city_comparison
+                
                 # Display as a formatted table
                 st.dataframe(
                     city_comparison[['City', 'Total_CAMA_Parcels', 'Matched_Parcels', 'Not_Matched', 'Match_Rate']],
@@ -618,10 +664,11 @@ if mls_file and cama_file:
                 
                 # Download button for city statistics
                 csv = city_comparison.to_csv(index=False)
+                timestamp_csv = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 st.download_button(
                     label="📥 Download City Statistics (CSV)",
                     data=csv,
-                    file_name="cama_match_rate_by_city.csv",
+                    file_name=f"city_match_statistics_{timestamp_csv}.csv",
                     mime="text/csv"
                 )
                 
@@ -694,43 +741,77 @@ if mls_file and cama_file:
         # Download section
         st.header("📥 Download Reports")
         
+        # Download All button
+        st.markdown("### 📦 Download All Reports")
+        
+        # Get city comparison if available
+        city_comp = st.session_state.get('city_comparison', None)
+        
+        # Generate timestamp for the ZIP filename
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        zip_filename = f"MLS_CAMA_Comparison_All_Reports_{timestamp}.zip"
+        
+        # Create the ZIP file
+        zip_data = create_zip_with_all_reports(
+            df_missing_cama, 
+            df_missing_mls, 
+            df_value_mismatches, 
+            df_perfect_matches,
+            city_comp
+        )
+        
+        st.download_button(
+            label="📦 Download All Reports (ZIP)",
+            data=zip_data,
+            file_name=zip_filename,
+            mime="application/zip",
+            help="Downloads all Excel reports and city statistics in a single ZIP file",
+            use_container_width=True
+        )
+        
+        st.markdown("### 📄 Download Individual Reports")
+        
         col1, col2 = st.columns(2)
         
         with col1:
             if not df_missing_cama.empty:
                 excel_data = create_excel_with_hyperlinks(df_missing_cama, 'Missing in CAMA')
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 st.download_button(
                     label="📄 Download Missing in CAMA",
                     data=excel_data,
-                    file_name="missing_in_CAMA.xlsx",
+                    file_name=f"missing_in_CAMA_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             
             if not df_value_mismatches.empty:
                 excel_data = create_excel_with_hyperlinks(df_value_mismatches, 'Value Mismatches')
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 st.download_button(
                     label="⚠️ Download Value Mismatches",
                     data=excel_data,
-                    file_name="value_mismatches.xlsx",
+                    file_name=f"value_mismatches_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         
         with col2:
             if not df_missing_mls.empty:
                 excel_data = create_excel_with_hyperlinks(df_missing_mls, 'Missing in MLS')
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 st.download_button(
                     label="📄 Download Missing in MLS",
                     data=excel_data,
-                    file_name="missing_in_MLS.xlsx",
+                    file_name=f"missing_in_MLS_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             
             if not df_perfect_matches.empty:
                 excel_data = create_excel_with_hyperlinks(df_perfect_matches, 'Perfect Matches')
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 st.download_button(
                     label="✅ Download Perfect Matches",
                     data=excel_data,
-                    file_name="perfect_matches.xlsx",
+                    file_name=f"perfect_matches_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
